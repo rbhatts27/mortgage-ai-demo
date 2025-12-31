@@ -1,6 +1,12 @@
 import { openai, AI_CONFIG, SYSTEM_PROMPT } from './openai';
 import { supabaseAdmin } from './supabase';
 import type { AIResponse, ConversationContext, ConversationMessage } from './types';
+import {
+  getOrCreateProfile,
+  recallMemories,
+  formatMemoriesForPrompt,
+  extractAndStoreObservations
+} from './memory';
 
 /**
  * Get or create a customer profile
@@ -115,15 +121,34 @@ export async function saveMessage(
 }
 
 /**
- * Generate AI response based on conversation context
+ * Generate AI response based on conversation context with Customer Memory
  */
 export async function generateAIResponse(
   context: ConversationContext
 ): Promise<AIResponse> {
   try {
+    // Get or create Twilio Memory profile
+    const profileId = await getOrCreateProfile(context.customerPhone);
+
+    // Recall relevant memories
+    let memoriesContext = '';
+    if (profileId) {
+      // Build a query from the last user message
+      const lastUserMessage = context.messages
+        .filter(msg => msg.role === 'user')
+        .slice(-1)[0];
+      const query = lastUserMessage?.content || '';
+
+      const memories = await recallMemories(profileId, query, context.conversationId);
+      memoriesContext = formatMemoriesForPrompt(memories);
+    }
+
+    // Build enhanced system prompt with memories
+    const enhancedSystemPrompt = SYSTEM_PROMPT + memoriesContext;
+
     // Build messages array for OpenAI
     const messages = [
-      { role: 'system' as const, content: SYSTEM_PROMPT },
+      { role: 'system' as const, content: enhancedSystemPrompt },
       ...context.messages.map((msg) => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
@@ -139,6 +164,16 @@ export async function generateAIResponse(
     });
 
     const aiMessage = completion.choices[0].message.content || 'I apologize, I could not generate a response.';
+
+    // Store observations from this conversation
+    if (profileId && context.messages.length > 0) {
+      // Run in background, don't wait for it
+      extractAndStoreObservations(
+        profileId,
+        context.messages,
+        context.channel
+      ).catch(err => console.error('Failed to store observations:', err));
+    }
 
     // Determine if handoff is needed
     const shouldHandoff = detectHandoffIntent(aiMessage, context);
