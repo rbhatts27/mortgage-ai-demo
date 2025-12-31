@@ -160,18 +160,46 @@ export async function generateAIResponse(
 
 /**
  * Detect if the conversation should be handed off to a human agent
+ * Checks the user's messages for explicit handoff requests
  */
 function detectHandoffIntent(aiMessage: string, context: ConversationContext): boolean {
-  const handoffKeywords = [
-    'connect you with',
-    'transfer you to',
-    'speak with a person',
+  // Check if user explicitly requested a human agent in their last few messages
+  const recentUserMessages = context.messages
+    .filter(msg => msg.role === 'user')
+    .slice(-3) // Check last 3 user messages
+    .map(msg => msg.content.toLowerCase());
+
+  const userHandoffKeywords = [
+    'speak to a person',
+    'talk to a human',
     'human agent',
-    'specialist',
+    'real person',
+    'actual person',
+    'transfer me',
+    'connect me to',
+    'yes', // Affirmative response after AI offers handoff
+    'yeah',
+    'sure',
+    'please',
+    'ok',
+    'okay',
   ];
 
-  return handoffKeywords.some((keyword) =>
-    aiMessage.toLowerCase().includes(keyword)
+  // Check if the AI just asked about connecting to an agent
+  const aiAskedAboutHandoff = aiMessage.toLowerCase().includes('would you like') &&
+                               aiMessage.toLowerCase().includes('human');
+
+  // If AI asked about handoff, check if user said yes in their last message
+  if (aiAskedAboutHandoff && recentUserMessages.length > 0) {
+    const lastUserMessage = recentUserMessages[recentUserMessages.length - 1];
+    return ['yes', 'yeah', 'sure', 'please', 'ok', 'okay'].some(keyword =>
+      lastUserMessage.includes(keyword)
+    );
+  }
+
+  // Otherwise check if user explicitly requested human agent
+  return recentUserMessages.some(message =>
+    userHandoffKeywords.some(keyword => message.includes(keyword))
   );
 }
 

@@ -2,6 +2,13 @@
 
 import { useEffect, useState } from 'react';
 
+interface Message {
+  id: string;
+  role: string;
+  content: string;
+  created_at: string;
+}
+
 interface Conversation {
   id: string;
   customer_phone: string;
@@ -11,6 +18,7 @@ interface Conversation {
   created_at: string;
   updated_at: string;
   messageCount: number;
+  messages: Message[];
 }
 
 interface DashboardData {
@@ -26,12 +34,25 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedConvs, setExpandedConvs] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 5000); // Refresh every 5 seconds
     return () => clearInterval(interval);
   }, []);
+
+  const toggleConversation = (id: string) => {
+    setExpandedConvs(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   const fetchData = async () => {
     try {
@@ -110,48 +131,87 @@ export default function DashboardPage() {
         {/* Conversations List */}
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-medium text-gray-900">Recent Conversations</h2>
+            <h2 className="text-lg font-medium text-gray-900">Live Conversations & Messages</h2>
+            <p className="text-sm text-gray-500 mt-1">Click on a conversation to view message transcript</p>
           </div>
-          <div className="overflow-x-auto">
+          <div className="p-6">
             {!data?.conversations || data.conversations.length === 0 ? (
-              <div className="p-6">
-                <p className="text-gray-500 text-center">No conversations yet. Start by sending a message to your Twilio number.</p>
-              </div>
+              <p className="text-gray-500 text-center">No conversations yet. Start by sending a message to your Twilio number.</p>
             ) : (
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Channel</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Messages</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {data.conversations.map((conv) => (
-                    <tr key={conv.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {conv.customer_phone}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <span className="text-xl">{getChannelIcon(conv.channel)}</span> {conv.channel}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(conv.status)}`}>
-                          {conv.status.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {conv.messageCount}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(conv.created_at).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="space-y-4">
+                {data.conversations.map((conv) => (
+                  <div key={conv.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                    {/* Conversation Header */}
+                    <button
+                      onClick={() => toggleConversation(conv.id)}
+                      className="w-full px-6 py-4 bg-gray-50 hover:bg-gray-100 text-left flex items-center justify-between transition-colors"
+                    >
+                      <div className="flex items-center space-x-4 flex-1">
+                        <span className="text-2xl">{getChannelIcon(conv.channel)}</span>
+                        <div>
+                          <div className="flex items-center space-x-3">
+                            <span className="font-medium text-gray-900">{conv.customer_phone}</span>
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(conv.status)}`}>
+                              {conv.status.replace('_', ' ')}
+                            </span>
+                            <span className="text-xs text-gray-500 uppercase">{conv.channel}</span>
+                          </div>
+                          <div className="text-sm text-gray-500 mt-1">
+                            <span className="font-mono text-xs">{conv.id.substring(0, 8)}...</span> • {conv.messageCount} messages • Started {new Date(conv.created_at).toLocaleTimeString()}
+                          </div>
+                        </div>
+                      </div>
+                      <svg
+                        className={`w-5 h-5 text-gray-400 transition-transform ${expandedConvs.has(conv.id) ? 'transform rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {/* Message Transcript */}
+                    {expandedConvs.has(conv.id) && (
+                      <div className="px-6 py-4 bg-white border-t border-gray-200">
+                        <div className="mb-3 text-xs text-gray-500 font-mono">
+                          Conversation ID: {conv.id}
+                        </div>
+                        {conv.messages.length === 0 ? (
+                          <p className="text-gray-400 text-sm italic">No messages yet</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {conv.messages.map((msg) => (
+                              <div
+                                key={msg.id}
+                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                              >
+                                <div className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                                  msg.role === 'user'
+                                    ? 'bg-blue-500 text-white'
+                                    : msg.role === 'assistant'
+                                    ? 'bg-gray-100 text-gray-900'
+                                    : 'bg-yellow-50 text-yellow-900 border border-yellow-200'
+                                }`}>
+                                  <div className="text-xs font-semibold mb-1 opacity-75">
+                                    {msg.role === 'user' ? 'Customer' : msg.role === 'assistant' ? 'AI Assistant' : 'System'}
+                                  </div>
+                                  <div className="text-sm whitespace-pre-wrap">{msg.content}</div>
+                                  <div className={`text-xs mt-1 ${
+                                    msg.role === 'user' ? 'text-blue-100' : 'text-gray-500'
+                                  }`}>
+                                    {new Date(msg.created_at).toLocaleTimeString()}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>

@@ -32,17 +32,26 @@ export async function GET() {
 
     const conversations = data as ConversationRow[] | null;
 
-    // Get message counts for each conversation
-    const conversationsWithCounts = await Promise.all(
+    // Get messages for each conversation
+    const conversationsWithMessages = await Promise.all(
       (conversations || []).map(async (conv) => {
-        const { count } = await (supabaseAdmin
-          .from('messages') as any)
-          .select('*', { count: 'exact', head: true })
-          .eq('conversation_id', conv.id);
+        const { data: messagesData } = await supabaseAdmin
+          .from('messages')
+          .select('id, role, content, created_at')
+          .eq('conversation_id', conv.id)
+          .order('created_at', { ascending: true });
+
+        const messages = messagesData as Array<{
+          id: string;
+          role: string;
+          content: string;
+          created_at: string;
+        }> | null;
 
         return {
           ...conv,
-          messageCount: count || 0,
+          messages: messages || [],
+          messageCount: messages?.length || 0,
         };
       })
     );
@@ -62,7 +71,7 @@ export async function GET() {
       : 0;
 
     return NextResponse.json({
-      conversations: conversationsWithCounts,
+      conversations: conversationsWithMessages,
       stats: {
         active: activeCount,
         handedOffToday,
